@@ -1,10 +1,10 @@
-package gator/internal/config
+package config
 
 import (
-	"os"
+	"encoding/json"
 	"fmt"
-	"json"
-	"errors"
+	"io"
+	"os"
 )
 
 type Config struct {
@@ -14,64 +14,64 @@ type Config struct {
 
 const gatorConfigFileName string = ".gatorconfig.json"
 
-func Read() Config, error {
+func Read() (Config, error) {
 
-	configFilePath := getConfigFilePath()
+	configFilePath, err := getConfigFilePath()
 	if err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	file, err := os.Open(configFilePath)
 	if err != nil {
 		fmt.Println("Cannot open gator config file")
-		return nil, err
+		return Config{}, err
 	}
 
 	defer file.Close()
 
-	data := []bytes{}
-	_, err := file.Read(data)
+	data, err := io.ReadAll(file)
 	if err != nil {
 		fmt.Println("Unable to read the contents of the gator config file")
-		return nil, err
+		return Config{}, err
 	}
 
 	var config Config
 
-	err := json.Unmarshall(data, &config)
+	err = json.Unmarshal(data, &config)
 	if err != nil {
 		fmt.Println("Unable to parse the config file")
-		return nil, err
+		return Config{}, err
 	}
 
 	return config, nil
 }
 
 func (c *Config) SetUser(userName string) {
-	c.UserName = userName
+	c.CurrentUserName = userName
 
-	configFilePath := getConfigFilePath()
-
-	var bytes []bytes
-	err := json.Unmarshall(bytes, c)
-	if err != nil {
-		fmt.Printf("SetUser: Bad data")
-	}
-	err := write(err)
+	configFilePath, err:= getConfigFilePath()
 	if err != nil {
 		return
 	}
-
-	return nil
+	var bytes []byte
+	bytes, err = json.Marshal(c)
+	if err != nil {
+		fmt.Println("SetUser: Bad data")
+	}
+	err = write(bytes, configFilePath)
+	if err != nil {
+		return
+	}
 }
 
 func write(bytes []byte , filePath string) error {
-	file, err := os.Open(filePath)
+	file, err := os.Create(filePath)
 	if err != nil {
-		fmt.Println("write: Failed to open file")
+		fmt.Println("write: Failed to create file")
 		return err
 	}
+	defer file.Close()
 
-	_, err := file.Write(bytes)
+	_, err = file.Write(bytes)
 	if err != nil {
 		fmt.Println("write: Failed to write to file")
 		return err
@@ -80,16 +80,15 @@ func write(bytes []byte , filePath string) error {
 	return nil
 }
 
-func getConfigFilePath() string, error {
-	homeDir, err = os.UserHomeDir()
+func getConfigFilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Println("Unable to obtain your home directory")
 		return "", err
 	}
 
 
-	filePath = fmt.Sprintf("%s/%s", homeDir, gatorConfigFileName)
-	configFilePath = fmt.Sprintf("%s/%s", homeDir, gatorConfigFileName)
+	configFilePath := fmt.Sprintf("%s/%s", homeDir, gatorConfigFileName)
 
 	return configFilePath, nil
 }
