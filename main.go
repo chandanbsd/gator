@@ -5,7 +5,14 @@ import (
 	"errors"
 	"github.com/chandanbsd/gator/internal/config"
 	"os"
+	"github.com/chandanbsd/gator/internal/database"
+	"time"
+	"database/sql"
+	"context"
+	"github.com/google/uuid"
 )
+
+import _ "github.com/lib/pq"
 
 
 type command struct {
@@ -18,6 +25,7 @@ type commands struct {
 }
 
 type state struct {
+	db *database.Queries
 	conf *config.Config
 }
 
@@ -53,6 +61,36 @@ func loginHandler(s *state, cmd command) error{
 	return nil
 }
 
+func registerHandlers(coms commands) {
+	coms.register("login", loginHandler)
+	coms.register("register", registerHandler)
+}
+
+func registerHandler(s *state, cmd command) error {
+	if len(cmd.Arguments) == 0 {
+		fmt.Println("Missing name argument")
+		return errors.New("You missed name argument")
+	}
+
+	user, err := state.db.db.GetUser(context.Background(), cmd.Arguments[0])
+	if err != nil || user != nil{
+		fmt.Prinln("Cannot verify if the user exists, please try again later")
+		return err
+	}
+	newUserParams := state.db.db.CreateUserParams{
+		ID: uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name: cmd.Arguments[0],
+	}
+		user, err = state.db.db.CreateUser(context.Background(), newUserParams)
+	if err == nil {
+		fmt.Println("Failed to create the user.")
+		return err
+	}
+	return nil
+}
+
 func main() {
 	arguments := os.Args
 	s := state {}
@@ -80,12 +118,17 @@ func main() {
 	coms := commands{
 		options: make(map[string]func(*state, command)error),
 	}
-	coms.register("login", loginHandler)
+	registerHandlers(coms)
+
 	err = coms.run(&s, com)
 	if err != nil {
 		fmt.Println("Error occured")
 		os.Exit(1)
 	}
+
+	db, err := sql.Open("postgres", s.conf.DbURL)
+
+	state.db = database.New(db)
 
 	c, err = config.Read()
 	if err != nil {
