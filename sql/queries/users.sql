@@ -13,3 +13,6 @@ SELECT *
 FROM users
 where name = $1;
 
+-- name: GetUsers :many
+SELECT *
+FROM users;
