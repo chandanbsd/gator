@@ -5,14 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
-	"time"
-
 	"github.com/chandanbsd/gator/internal/config"
 	"github.com/chandanbsd/gator/internal/database"
+	"github.com/chandanbsd/gator/internal/feed"
 	"github.com/google/uuid"
-
 	_ "github.com/lib/pq"
+	"os"
+	"time"
 )
 
 type command struct {
@@ -70,6 +69,7 @@ func registerHandlers(coms commands) {
 	coms.register("register", registerHandler)
 	coms.register("users", usersHandler)
 	coms.register("reset", deleteHandler)
+	coms.register("agg", aggHandler)
 }
 
 func deleteHandler(s *state, cmd command) error {
@@ -136,6 +136,18 @@ func usersHandler(s *state, cmd command) error {
 		}
 	}
 
+	return nil
+}
+
+func aggHandler(s *state, cmd command) error {
+
+	var feedURL string = "https://www.wagslane.dev/index.xml"
+	rssFeed, err := feed.FetchFeed(context.Background(), feedURL)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(rssFeed)
 	return nil
 }
 
