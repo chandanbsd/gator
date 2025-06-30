@@ -5,14 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/chandanbsd/gator/internal/config"
 	"github.com/chandanbsd/gator/internal/database"
 	"github.com/google/uuid"
-	"os"
-	"time"
-)
 
-import _ "github.com/lib/pq"
+	_ "github.com/lib/pq"
+)
 
 type command struct {
 	Name      string
@@ -67,6 +68,19 @@ func loginHandler(s *state, cmd command) error {
 func registerHandlers(coms commands) {
 	coms.register("login", loginHandler)
 	coms.register("register", registerHandler)
+	coms.register("users", usersHandler)
+	coms.register("reset", deleteHandler)
+}
+
+func deleteHandler(s *state, cmd command) error {
+	err := s.db.DeleteUsers(context.Background())
+	if err != nil {
+		os.Exit(1)
+	}
+
+	s.conf.SetUser("")
+
+	return nil
 }
 
 func registerHandler(s *state, cmd command) error {
@@ -104,6 +118,24 @@ func registerHandler(s *state, cmd command) error {
 	s.conf.SetUser(cmd.Arguments[0])
 
 	fmt.Printf("Created user %s\n", s.conf.CurrentUserName)
+	return nil
+}
+
+func usersHandler(s *state, cmd command) error {
+	users, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		os.Exit(1)
+	}
+
+	for _, user := range users {
+
+		if user == s.conf.CurrentUserName {
+			fmt.Println(user + " (current)")
+		} else {
+			fmt.Println(user)
+		}
+	}
+
 	return nil
 }
 
