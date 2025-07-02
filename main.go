@@ -70,6 +70,7 @@ func registerHandlers(coms commands) {
 	coms.register("users", usersHandler)
 	coms.register("reset", deleteHandler)
 	coms.register("agg", aggHandler)
+	coms.register("addFeed", addFeedHandler)
 }
 
 func deleteHandler(s *state, cmd command) error {
@@ -126,13 +127,13 @@ func usersHandler(s *state, cmd command) error {
 	if err != nil {
 		os.Exit(1)
 	}
-
+	
 	for _, user := range users {
 
-		if user == s.conf.CurrentUserName {
-			fmt.Println(user + " (current)")
+		if user.Name == s.conf.CurrentUserName {
+			fmt.Println(user.Name + " (current)")
 		} else {
-			fmt.Println(user)
+			fmt.Println(user.Name)
 		}
 	}
 
@@ -148,6 +149,50 @@ func aggHandler(s *state, cmd command) error {
 	}
 
 	fmt.Println(rssFeed)
+	return nil
+}
+
+func addFeedHandler(s *state, cmd command) error {
+	if len(cmd.Arguments) < 2 {
+		fmt.Println("Missing name argument")
+		os.Exit(1)
+	}
+
+	user, err := s.db.GetUser(context.Background(), s.conf.CurrentUserName)
+	if err != nil {
+		fmt.Println("Failed to get the current user")
+		os.Exit(1)
+	}
+
+	currentTime := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	currentNullTime := sql.NullTime{
+		Time:  time.Now(),
+		Valid: false,
+	}
+
+
+
+	newFeed := database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: currentTime,
+		UpdatedAt: currentNullTime,
+		Name:      cmd.Arguments[0],
+		Url: cmd.Arguments[1],
+		UserID: user.ID,
+	}
+
+	_, err = s.db.CreateFeed(context.Background(), newFeed)
+	if err != nil {
+		fmt.Println("Failed to create the feed")
+		os.Exit(1)
+	} else {
+		fmt.Println("User created successfully")
+	}
+
 	return nil
 }
 
