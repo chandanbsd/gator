@@ -70,7 +70,7 @@ func registerHandlers(coms commands) {
 	coms.register("users", usersHandler)
 	coms.register("reset", deleteHandler)
 	coms.register("agg", aggHandler)
-	coms.register("addFeed", addFeedHandler)
+	coms.register("addfeed", addFeedHandler)
 }
 
 func deleteHandler(s *state, cmd command) error {
@@ -127,7 +127,7 @@ func usersHandler(s *state, cmd command) error {
 	if err != nil {
 		os.Exit(1)
 	}
-	
+
 	for _, user := range users {
 
 		if user.Name == s.conf.CurrentUserName {
