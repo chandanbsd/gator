@@ -71,6 +71,7 @@ func registerHandlers(coms commands) {
 	coms.register("reset", deleteHandler)
 	coms.register("agg", aggHandler)
 	coms.register("addfeed", addFeedHandler)
+	coms.register("feeds", feedsHandler)
 }
 
 func deleteHandler(s *state, cmd command) error {
@@ -196,6 +197,19 @@ func addFeedHandler(s *state, cmd command) error {
 	return nil
 }
 
+func feedsHandler(s *state, cmd command) error {
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		fmt.Println("Unable to fetch feeds")
+		os.Exit(1)
+	}
+
+	for _, feed := range feeds {
+		fmt.Printf("name: %v url: %v, user_name: %v\n", feed.Name, feed.Url, feed.UserName)
+	}
+	return nil
+}
+
 func main() {
 	arguments := os.Args
 	s := state{}
@@ -238,6 +252,4 @@ func main() {
 		fmt.Println("Failed to update the config")
 		os.Exit(1)
 	}
-
-	fmt.Println(c)
 }
