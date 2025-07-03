@@ -72,6 +72,8 @@ func registerHandlers(coms commands) {
 	coms.register("agg", aggHandler)
 	coms.register("addfeed", addFeedHandler)
 	coms.register("feeds", feedsHandler)
+	coms.register("follow", followHandler)
+	coms.register("following", followingHandler)
 }
 
 func deleteHandler(s *state, cmd command) error {
@@ -194,6 +196,10 @@ func addFeedHandler(s *state, cmd command) error {
 		fmt.Println("User created successfully")
 	}
 
+	followHandler(s, command{
+		Name: "follow",
+		Arguments: []string{cmd.Arguments[1]},
+	})
 	return nil
 }
 
@@ -209,6 +215,74 @@ func feedsHandler(s *state, cmd command) error {
 	}
 	return nil
 }
+
+func followHandler(s *state, cmd command) error {
+	if len(cmd.Arguments) != 1 {
+		fmt.Println("MIssing url or wrong arguments provided");
+		os.Exit(1)
+	}
+
+	currentTime := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	currentNullTime := sql.NullTime{
+		Time:  time.Now(),
+		Valid: false,
+	}
+
+	currentUser, err := s.db.GetUser(context.Background(), s.conf.CurrentUserName)
+	if err != nil {
+		fmt.Println("Failed the get the current user")
+		os.Exit(1)
+	}
+
+	feed, err := s.db.GetFeedByUrl(context.Background(), cmd.Arguments[0])
+	if err != nil {
+		fmt.Println("Feed does not exist")
+		os.Exit(1)
+	}
+
+	createdFeedFollowParam := database.CreateFeedFollowParams {
+		ID: uuid.New(),
+		CreatedAt: currentTime,
+		UpdatedAt: currentNullTime,
+		FeedID: feed.ID,
+		UserID: currentUser.ID,
+	}
+
+	createdFeedFollow, err := s.db.CreateFeedFollow(context.Background(), createdFeedFollowParam)
+	if err != nil {
+		fmt.Println("Failed to folow the feed")
+		os.Exit(1)
+	}
+
+	fmt.Printf("Feed name: %s and current user: %s\n", createdFeedFollow.FeedName, createdFeedFollow.UserName)
+
+	return nil
+}
+
+func followingHandler(s *state, cmd command) error {
+
+	currentUser, err := s.db.GetUser(context.Background(), s.conf.CurrentUserName)
+	if err != nil {
+		fmt.Println("User not found");
+		os.Exit(1)
+	}
+
+	feedsForUser, err := s.db.GetFeedFollowsForUser(context.Background(), currentUser.ID)
+	if err != nil {
+		fmt.Println("Failed to fetch feeds followed by user");
+		os.Exit(1)
+	}
+
+	for _, feed := range feedsForUser {
+		fmt.Println(feed)
+	}
+	return nil
+}
+
 
 func main() {
 	arguments := os.Args
