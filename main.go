@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/chandanbsd/gator/internal/config"
@@ -76,6 +77,7 @@ func registerHandlers(coms commands) {
 	coms.register("follow", middlewareLoggedIn(followHandler))
 	coms.register("following", middlewareLoggedIn(followingHandler))
 	coms.register("unfollow", middlewareLoggedIn(deleteFeedFollowHandler))
+	coms.register("browse", middlewareLoggedIn(browseHandler))
 }
 
 func deleteHandler(s *state, cmd command) error {
@@ -147,13 +149,55 @@ func usersHandler(s *state, cmd command) error {
 
 func aggHandler(s *state, cmd command) error {
 
-	var feedURL string = "https://www.wagslane.dev/index.xml"
-	rssFeed, err := feed.FetchFeed(context.Background(), feedURL)
+	if len(cmd.Arguments) != 1 {
+		fmt.Println("Incorrect arguments list")
+		os.Exit(1)
+	}
+
+	duration, err := time.ParseDuration(cmd.Arguments[0])
 	if err != nil {
+		fmt.Println("Unable to parse duration")
+		return err	
+	}
+
+	ticker := time.NewTicker(duration)
+
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
+}
+
+func browseHandler(s *state, cmd command, u database.User) error {
+	limit32 := int32(2)
+	if len(cmd.Arguments) == 1 {
+		limit64, err := strconv.ParseInt(cmd.Arguments[0], 10, 32)
+		if err != nil {
+			return err
+		}
+		limit32 = int32(limit64)
+	}
+
+	posts, err := s.db.GetPostsForUser(
+		context.Background(), 
+		database.GetPostsForUserParams{
+			UserID: u.ID,
+			Limit: int32(limit32),
+		})
+	if err != nil {
+		fmt.Println("Unable to get posts for user")
 		return err
 	}
 
-	fmt.Println(rssFeed)
+	for _, post := range posts {
+		fmt.Printf("Title: %v\tCreatedAt: %v\tUpdatedAt: %v\tTitle:%v\tUrl:%v\tDescription:%v\tPublishedAt:%v",
+			post.CreatedAt,
+			post.UpdatedAt,
+			post.Title,
+			post.Url,
+			post.Description,
+			post.PublishedAt,
+		)
+	}
 	return nil
 }
 
@@ -294,6 +338,70 @@ func deleteFeedFollowHandler(s *state, cmd command, user database.User) error {
 		fmt.Println("Failed to delete the feed follow")
 		os.Exit(1)
 	}
+	return nil
+}
+
+func scrapeFeeds(s *state) error{
+	fmt.Println("*************Fetching Feed**************")
+	nextFeed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		fmt.Println("Failed to fetch the next feed")
+		os.Exit(1)
+	}
+
+	markFeedFetchedParams := database.MarkFeedFetchedParams {
+		LastFetchedAt: sql.NullTime{
+			Time: time.Now(),
+		},
+		ID: nextFeed.ID,
+	}
+
+	rssFeed, err := feed.FetchFeed(context.Background(), nextFeed.Url)
+	if err != nil {
+		fmt.Println("Failed to fetch feed")
+		return err
+	}
+	
+	for _, item := range rssFeed.Channel.Item {
+
+	
+		currentNullTime := sql.NullTime{
+			Time:  time.Now(),
+			Valid: false,
+		}
+
+		pubAt, err :=time.Parse(time.RFC1123Z, item.PubDate)
+		if err != nil {
+			fmt.Print("Failed to parse time %v", err)
+			return err
+		}
+
+		newPost := database.CreatePostParams {
+			ID: uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: currentNullTime,
+			Title: item.Title,
+			Url: item.Link,
+			Description: sql.NullString{
+				String: item.Description ,
+			},
+			PublishedAt: sql.NullTime{
+				Time: pubAt,
+			},
+			FeedID: nextFeed.ID,
+		}
+
+	err =	s.db.CreatePost(context.Background(), newPost)
+	fmt.Println("Failed to create post")
+	}
+
+	err = s.db.MarkFeedFetched(context.Background(), markFeedFetchedParams)
+	if err != nil {
+		fmt.Println("Failed to mark the feed as fetched")
+	}
+
+	fmt.Println(rssFeed)
+	
 	return nil
 }
 

@@ -25,3 +25,13 @@ join users u on u.id = f.user_id;
 select f.ID, f.url
 from feeds f
 where f.url = $1;
+
+-- name: MarkFeedFetched :exec
+update feeds
+set last_fetched_at = $1
+where ID = $2;
+
+-- name: GetNextFeedToFetch :one
+select *
+from feeds
+order by last_fetched_at desc;
