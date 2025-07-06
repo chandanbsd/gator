@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/chandanbsd/gator/internal/config"
 	"github.com/chandanbsd/gator/internal/database"
 	"github.com/chandanbsd/gator/internal/feed"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-	"os"
-	"time"
 )
 
 type command struct {
@@ -52,12 +53,12 @@ func loginHandler(s *state, cmd command) error {
 		fmt.Println("Please provide a username")
 		os.Exit(1)
 	}
-
 	user, err := s.db.GetUser(context.Background(), cmd.Arguments[0])
 	if err != nil {
 		os.Exit(1)
 	}
 	s.conf.SetUser(user.Name)
+
 
 	fmt.Printf("Your username has been set to %s\n", s.conf.CurrentUserName)
 
@@ -70,10 +71,11 @@ func registerHandlers(coms commands) {
 	coms.register("users", usersHandler)
 	coms.register("reset", deleteHandler)
 	coms.register("agg", aggHandler)
-	coms.register("addfeed", addFeedHandler)
 	coms.register("feeds", feedsHandler)
-	coms.register("follow", followHandler)
-	coms.register("following", followingHandler)
+	coms.register("addfeed", middlewareLoggedIn(addFeedHandler))
+	coms.register("follow", middlewareLoggedIn(followHandler))
+	coms.register("following", middlewareLoggedIn(followingHandler))
+	coms.register("unfollow", middlewareLoggedIn(deleteFeedFollowHandler))
 }
 
 func deleteHandler(s *state, cmd command) error {
@@ -155,18 +157,23 @@ func aggHandler(s *state, cmd command) error {
 	return nil
 }
 
-func addFeedHandler(s *state, cmd command) error {
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func (s *state, cmd command) error{
+		user, err := s.db.GetUser(context.Background(), s.conf.CurrentUserName)
+		if err != nil {
+			fmt.Println("Failed to get the current user")
+			return err
+		}
+		return handler(s, cmd, user)
+	}
+
+}
+
+func addFeedHandler(s *state, cmd command, user database.User) error {
 	if len(cmd.Arguments) < 2 {
 		fmt.Println("Missing name argument")
 		os.Exit(1)
 	}
-
-	user, err := s.db.GetUser(context.Background(), s.conf.CurrentUserName)
-	if err != nil {
-		fmt.Println("Failed to get the current user")
-		os.Exit(1)
-	}
-
 	currentTime := sql.NullTime{
 		Time:  time.Now(),
 		Valid: true,
@@ -188,7 +195,7 @@ func addFeedHandler(s *state, cmd command) error {
 		UserID: user.ID,
 	}
 
-	_, err = s.db.CreateFeed(context.Background(), newFeed)
+	_, err := s.db.CreateFeed(context.Background(), newFeed)
 	if err != nil {
 		fmt.Println("Failed to create the feed")
 		os.Exit(1)
@@ -199,7 +206,7 @@ func addFeedHandler(s *state, cmd command) error {
 	followHandler(s, command{
 		Name: "follow",
 		Arguments: []string{cmd.Arguments[1]},
-	})
+	}, user)
 	return nil
 }
 
@@ -216,9 +223,9 @@ func feedsHandler(s *state, cmd command) error {
 	return nil
 }
 
-func followHandler(s *state, cmd command) error {
+func followHandler(s *state, cmd command, user database.User) error {
 	if len(cmd.Arguments) != 1 {
-		fmt.Println("MIssing url or wrong arguments provided");
+		fmt.Println("Missing url or wrong arguments provided");
 		os.Exit(1)
 	}
 
@@ -232,12 +239,6 @@ func followHandler(s *state, cmd command) error {
 		Valid: false,
 	}
 
-	currentUser, err := s.db.GetUser(context.Background(), s.conf.CurrentUserName)
-	if err != nil {
-		fmt.Println("Failed the get the current user")
-		os.Exit(1)
-	}
-
 	feed, err := s.db.GetFeedByUrl(context.Background(), cmd.Arguments[0])
 	if err != nil {
 		fmt.Println("Feed does not exist")
@@ -249,7 +250,7 @@ func followHandler(s *state, cmd command) error {
 		CreatedAt: currentTime,
 		UpdatedAt: currentNullTime,
 		FeedID: feed.ID,
-		UserID: currentUser.ID,
+		UserID: user.ID,
 	}
 
 	createdFeedFollow, err := s.db.CreateFeedFollow(context.Background(), createdFeedFollowParam)
@@ -263,15 +264,9 @@ func followHandler(s *state, cmd command) error {
 	return nil
 }
 
-func followingHandler(s *state, cmd command) error {
+func followingHandler(s *state, cmd command,  user database.User) error {
 
-	currentUser, err := s.db.GetUser(context.Background(), s.conf.CurrentUserName)
-	if err != nil {
-		fmt.Println("User not found");
-		os.Exit(1)
-	}
-
-	feedsForUser, err := s.db.GetFeedFollowsForUser(context.Background(), currentUser.ID)
+	feedsForUser, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
 		fmt.Println("Failed to fetch feeds followed by user");
 		os.Exit(1)
@@ -279,6 +274,25 @@ func followingHandler(s *state, cmd command) error {
 
 	for _, feed := range feedsForUser {
 		fmt.Println(feed)
+	}
+	return nil
+}
+
+func deleteFeedFollowHandler(s *state, cmd command, user database.User) error {
+	if len(cmd.Arguments) != 1 {
+		fmt.Println("Missing url argument");
+	}
+	
+	feedFollowParams := database.DeleteFeedFollowParams {
+		UserID: user.ID,
+		Url: cmd.Arguments[0],
+	}
+
+
+	err := s.db.DeleteFeedFollow(context.Background(), feedFollowParams)
+	if err != nil {
+		fmt.Println("Failed to delete the feed follow")
+		os.Exit(1)
 	}
 	return nil
 }
